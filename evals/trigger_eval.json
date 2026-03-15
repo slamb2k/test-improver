@@ -1,0 +1,22 @@
+[
+  {"query": "My Gemini image generation prompt keeps producing diagrams with garbled text and weird neon colors. I've tried tweaking it manually but it's hit or miss. Can you help me set up something that automatically tests different versions and finds what works?", "should_trigger": true},
+  {"query": "I have a prompt that generates marketing copy using GPT-4 but the quality varies wildly. Sometimes it's great, sometimes it's generic garbage. I want to systematically improve it — maybe run it 50 times with different inputs and see what consistently works", "should_trigger": true},
+  {"query": "can you set up an autoresearch loop for my code review prompt? i have a config.yaml already with criteria defined, just need to run a few optimization cycles", "should_trigger": true},
+  {"query": "I want to A/B test two different system prompts for my chatbot. One is more formal, one is casual. Need to evaluate which one scores better across 20 test conversations on helpfulness, accuracy, and tone", "should_trigger": true},
+  {"query": "ok so i've been hand-tuning this prompt for generating SVG icons and it's taking forever. there must be a way to automate this — generate a bunch, score them on some criteria, and iterate. Can you help me set that up?", "should_trigger": true},
+  {"query": "I need to optimize my email subject line generator. It uses OpenAI's API and I want to evaluate on click-worthiness, clarity, and length. Can you create the whole setup from scratch including the config and initial prompt?", "should_trigger": true},
+  {"query": "my stable diffusion prompts are inconsistent. sometimes they produce beautiful landscapes, sometimes they're a mess. Is there a way to use Claude to evaluate outputs and automatically improve the prompt over multiple iterations?", "should_trigger": true},
+  {"query": "I'm running an optimization loop with autoresearch.py but my legibility scores keep fluctuating between 4/10 and 10/10. The pastel and layout criteria are solid. What should I tweak in the mutation rules to stabilize text quality?", "should_trigger": true},
+  {"query": "I want to improve my prompt for generating technical documentation. Currently using Anthropic's API. The docs come out okay but they're missing code examples and the structure is inconsistent. I want to define some criteria and iterate automatically", "should_trigger": true},
+  {"query": "help me create a dashboard to monitor my prompt optimization progress. I already have results in a results.jsonl file with per-criterion scores", "should_trigger": true},
+  {"query": "Can you help me write a Python script that calls the OpenAI API to generate images? I just need a simple wrapper function", "should_trigger": false},
+  {"query": "I need to set up a CI/CD pipeline for my Node.js application. We're using GitHub Actions and deploying to AWS ECS", "should_trigger": false},
+  {"query": "Can you review this pull request? It adds authentication with JWT tokens to our Express API. Check for security issues and best practices", "should_trigger": false},
+  {"query": "I want to fine-tune a GPT model on my company's support tickets so it can auto-respond to common questions. How do I prepare the training data?", "should_trigger": false},
+  {"query": "Help me set up a RAG pipeline with LangChain. I have a bunch of PDF documents I want to query with natural language", "should_trigger": false},
+  {"query": "I need to write unit tests for my React components. We're using Jest and React Testing Library. Can you help me get started?", "should_trigger": false},
+  {"query": "Can you help me build a simple web scraper in Python that extracts product prices from an e-commerce site?", "should_trigger": false},
+  {"query": "I want to create a Slack bot that responds to messages using Claude. Can you help me set up the webhook and API integration?", "should_trigger": false},
+  {"query": "My Docker containers keep running out of memory. Can you help me profile the Node.js application and find the memory leak?", "should_trigger": false},
+  {"query": "I need to migrate my PostgreSQL database schema. We're adding a new table for user preferences and need to update the ORM models", "should_trigger": false}
+]
