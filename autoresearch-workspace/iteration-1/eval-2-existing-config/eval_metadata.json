@@ -1,0 +1,11 @@
+{
+  "eval_id": 2,
+  "eval_name": "existing-config",
+  "prompt": "I already have a config.yaml with criteria defined for my code review prompt optimizer. Just run 5 cycles for me and show me the dashboard when done.",
+  "assertions": [
+    "Skips criteria generation/review entirely since user says criteria exist",
+    "Uses the --cycles 5 flag to run exactly 5 optimization cycles",
+    "Offers to start the dashboard (dashboard.py) after cycles complete",
+    "Identifies the correct config file for the code review use case"
+  ]
+}

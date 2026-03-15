@@ -1,0 +1,12 @@
+{
+  "eval_id": 3,
+  "eval_name": "email-from-scratch",
+  "prompt": "I want to create an optimization loop for my email subject line generator. It uses OpenAI's API to generate subject lines and I want to evaluate them on click-worthiness, clarity, and length. Can you set everything up from scratch?",
+  "assertions": [
+    "Creates a new config YAML with openai_text as the generation backend",
+    "Defines evaluation criteria matching the user's three requirements: click-worthiness, clarity, and length",
+    "Includes realistic email subject line topics as test inputs",
+    "Creates an initial prompt.txt as a starting point for optimization",
+    "Sets up or documents the data directory structure needed for the optimization loop"
+  ]
+}

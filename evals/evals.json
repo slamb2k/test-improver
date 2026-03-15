@@ -1,0 +1,43 @@
+{
+  "skill_name": "autoresearch",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I have a prompt that generates technical diagrams but the quality is inconsistent. Some come out with garbled text, wrong colors. I want to systematically improve it. I have a Gemini API key and about 30 example topics. Can you help me set up an automated optimization loop?",
+      "expected_output": "Reads SKILL.md, loads config.yaml, detects existing criteria, asks about cycles, runs the optimization loop",
+      "files": [],
+      "expectations": [
+        "Reads SKILL.md and follows the step-by-step procedure defined in it",
+        "Loads and validates config.yaml before attempting to run",
+        "Detects that evaluation criteria already exist in config.yaml and does NOT regenerate them",
+        "Asks the user how many cycles to run (or confirms before starting)",
+        "Provides the correct autoresearch.py command with --config config.yaml flag"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I already have a config.yaml with criteria defined for my code review prompt optimizer. Just run 5 cycles for me and show me the dashboard when done.",
+      "expected_output": "Skips criteria setup, runs exactly 5 cycles, starts the dashboard",
+      "files": [],
+      "expectations": [
+        "Skips criteria generation/review entirely since user says criteria exist",
+        "Uses the --cycles 5 flag to run exactly 5 optimization cycles",
+        "Offers to start the dashboard (dashboard.py) after cycles complete",
+        "Identifies the correct config file for the code review use case"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I want to create an optimization loop for my email subject line generator. It uses OpenAI's API to generate subject lines and I want to evaluate them on click-worthiness, clarity, and length. Can you set everything up from scratch?",
+      "expected_output": "Creates a complete new config YAML for email subject lines with OpenAI backend, criteria, topics, and initial prompt",
+      "files": [],
+      "expectations": [
+        "Creates a new config YAML with openai_text as the generation backend",
+        "Defines evaluation criteria matching the user's three requirements: click-worthiness, clarity, and length",
+        "Includes realistic email subject line topics as test inputs",
+        "Creates an initial prompt.txt as a starting point for optimization",
+        "Sets up or documents the data directory structure needed for the optimization loop"
+      ]
+    }
+  ]
+}
