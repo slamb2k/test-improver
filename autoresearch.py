@@ -34,6 +34,93 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# ─── Criteria Auto-Generation ────────────────────────────────────────────────
+
+
+def generate_criteria(cfg: dict) -> tuple[list[dict], list[str]]:
+    """Use Claude to auto-generate evaluation criteria and mutation rules from config context.
+
+    Returns (criteria_list, mutation_rules) derived from the skill's name,
+    description, generation settings, and sample topics.
+    """
+    import anthropic
+
+    name = cfg.get("name", "unnamed skill")
+    description = cfg.get("description", "")
+    output_type = cfg.get("generation", {}).get("output_type", "text")
+    backend = cfg.get("generation", {}).get("backend", "")
+    topics = cfg.get("topics", [])
+    sample_topics = topics[:5] if len(topics) > 5 else topics
+    topics_text = "\n".join(f"- {t.strip()[:150]}" for t in sample_topics)
+
+    prompt = f"""You are designing evaluation criteria for an automated prompt optimization system.
+
+The system generates outputs and then evaluates them against yes/no boolean criteria. Your job is to define 4-6 criteria that capture what makes a high-quality output for this specific skill.
+
+SKILL DETAILS:
+- Name: {name}
+- Description: {description}
+- Output type: {output_type} ({"visual content" if output_type == "image" else "text content"})
+- Backend: {backend}
+- Sample inputs/topics:
+{topics_text}
+
+REQUIREMENTS FOR CRITERIA:
+1. Each criterion must be evaluatable as a simple yes/no (pass/fail) question
+2. Criteria should be specific and objective — avoid subjective or vague measures
+3. Cover different quality dimensions (e.g., correctness, completeness, formatting, clarity)
+4. Descriptions must be detailed enough that an LLM evaluator can consistently judge pass/fail
+5. Use concrete, measurable language (e.g., "contains at least 3 sections" not "is well-structured")
+
+Also generate 4-6 mutation rules — domain-specific guidance for how to improve the prompt when specific criteria fail.
+
+Respond in this exact JSON format:
+{{
+  "criteria": [
+    {{
+      "name": "snake_case_id",
+      "label": "Short Display Name",
+      "description": "Detailed description of what PASS means for this criterion..."
+    }}
+  ],
+  "mutation_rules": [
+    "If X criterion fails: add explicit instruction to Y",
+    "Keep prompt under N words"
+  ]
+}}
+
+Return ONLY valid JSON — no markdown fences, no explanation."""
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("ERROR: ANTHROPIC_API_KEY required for criteria generation", file=sys.stderr)
+        sys.exit(1)
+
+    client = anthropic.Anthropic(api_key=api_key)
+    print("  Generating evaluation criteria from config context...")
+
+    response = client.messages.create(
+        model=cfg.get("evaluation", {}).get("model", "claude-sonnet-4-6"),
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = response.content[0].text.strip()
+
+    # Extract JSON (handle markdown fences)
+    if "```" in text:
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+
+    result = json.loads(text)
+    criteria = result["criteria"]
+    mutation_rules = result.get("mutation_rules", [])
+
+    print(f"  Generated {len(criteria)} criteria: {', '.join(c['label'] for c in criteria)}")
+    return criteria, mutation_rules
+
+
 # ─── Config Loading ──────────────────────────────────────────────────────────
 
 
@@ -47,17 +134,41 @@ def load_config(config_path: str) -> dict:
         cfg = yaml.safe_load(f)
 
     # Validate required fields
-    required = ["generation", "evaluation", "topics"]
+    required = ["generation", "topics"]
     for key in required:
         if key not in cfg:
             print(f"ERROR: Config missing required key: {key}", file=sys.stderr)
             sys.exit(1)
 
+    # Ensure evaluation section exists
+    if "evaluation" not in cfg:
+        cfg["evaluation"] = {}
+    if "model" not in cfg["evaluation"]:
+        cfg["evaluation"]["model"] = "claude-sonnet-4-6"
+
+    # Auto-generate criteria if not provided
     if not cfg["evaluation"].get("criteria"):
-        print("ERROR: Config must define at least one evaluation criterion", file=sys.stderr)
-        sys.exit(1)
+        criteria, mutation_rules = generate_criteria(cfg)
+        cfg["evaluation"]["criteria"] = criteria
+        # Also set mutation rules if not already defined
+        if not cfg.get("mutation", {}).get("rules"):
+            if "mutation" not in cfg:
+                cfg["mutation"] = {}
+            cfg["mutation"]["rules"] = mutation_rules
+
+        # Save generated criteria back to config for reproducibility
+        with open(path) as f:
+            raw = f.read()
+        _save_generated_criteria(path, cfg, criteria, mutation_rules)
 
     return cfg
+
+
+def _save_generated_criteria(config_path: Path, cfg: dict, criteria: list[dict], mutation_rules: list[str]):
+    """Append auto-generated criteria to the config file so they persist across runs."""
+    # Write the full config back with generated criteria included
+    with open(config_path, "w") as f:
+        yaml.dump(cfg, f, default_flow_style=False, sort_keys=False, width=100, allow_unicode=True)
 
 
 # ─── Data Paths ──────────────────────────────────────────────────────────────
