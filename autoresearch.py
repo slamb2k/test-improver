@@ -34,11 +34,159 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# ─── Criteria Generation & Optimization ─────────────────────────────────────
+
+
+def _get_anthropic_client(cfg: dict):
+    """Get an Anthropic client for criteria generation/optimization."""
+    import anthropic
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("ERROR: ANTHROPIC_API_KEY required for criteria generation", file=sys.stderr)
+        sys.exit(1)
+    return anthropic.Anthropic(api_key=api_key)
+
+
+def _extract_json(text: str) -> dict:
+    """Extract JSON from a response that may contain markdown fences."""
+    text = text.strip()
+    if "```" in text:
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    return json.loads(text)
+
+
+def _build_skill_context(cfg: dict) -> str:
+    """Build a context string describing the skill for LLM prompts."""
+    name = cfg.get("name", "unnamed skill")
+    description = cfg.get("description", "")
+    output_type = cfg.get("generation", {}).get("output_type", "text")
+    backend = cfg.get("generation", {}).get("backend", "")
+    topics = cfg.get("topics", [])
+    sample_topics = topics[:5] if len(topics) > 5 else topics
+    topics_text = "\n".join(f"- {t.strip()[:150]}" for t in sample_topics)
+
+    return f"""- Name: {name}
+- Description: {description}
+- Output type: {output_type} ({"visual content" if output_type == "image" else "text content"})
+- Backend: {backend}
+- Sample inputs/topics:
+{topics_text}"""
+
+
+def generate_criteria(cfg: dict) -> tuple[list[dict], list[str]]:
+    """Auto-generate evaluation criteria and mutation rules from config context.
+
+    Returns (criteria_list, mutation_rules).
+    """
+    skill_context = _build_skill_context(cfg)
+
+    prompt = f"""You are designing evaluation criteria for an automated prompt optimization system.
+
+The system generates outputs and then evaluates them against yes/no boolean criteria. Your job is to define 4-6 criteria that capture what makes a high-quality output for this specific skill.
+
+SKILL DETAILS:
+{skill_context}
+
+REQUIREMENTS FOR CRITERIA:
+1. Each criterion must be evaluatable as a simple yes/no (pass/fail) question
+2. Criteria should be specific and objective — avoid subjective or vague measures
+3. Cover different quality dimensions (e.g., correctness, completeness, formatting, clarity)
+4. Descriptions must be detailed enough that an LLM evaluator can consistently judge pass/fail
+5. Use concrete, measurable language (e.g., "contains at least 3 sections" not "is well-structured")
+
+Also generate 4-6 mutation rules — domain-specific guidance for how to improve the prompt when specific criteria fail.
+
+Respond in this exact JSON format:
+{{
+  "criteria": [
+    {{
+      "name": "snake_case_id",
+      "label": "Short Display Name",
+      "description": "Detailed description of what PASS means for this criterion..."
+    }}
+  ],
+  "mutation_rules": [
+    "If X criterion fails: add explicit instruction to Y",
+    "Keep prompt under N words"
+  ]
+}}
+
+Return ONLY valid JSON — no markdown fences, no explanation."""
+
+    client = _get_anthropic_client(cfg)
+
+    response = client.messages.create(
+        model=cfg.get("evaluation", {}).get("model", "claude-sonnet-4-6"),
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    result = _extract_json(response.content[0].text)
+    criteria = result["criteria"]
+    mutation_rules = result.get("mutation_rules", [])
+
+    return criteria, mutation_rules
+
+
+def optimize_criterion(cfg: dict, criterion: dict) -> dict:
+    """Generate an improved version of a single criterion. Returns the optimized criterion dict."""
+    skill_context = _build_skill_context(cfg)
+
+    prompt = f"""You are improving an evaluation criterion for an automated prompt optimization system.
+
+SKILL DETAILS:
+{skill_context}
+
+CURRENT CRITERION:
+- Name: {criterion['name']}
+- Label: {criterion.get('label', criterion['name'])}
+- Description: {criterion['description']}
+
+Improve this criterion to be more:
+1. Specific and objective — reduce ambiguity so different evaluators would agree
+2. Measurable — use concrete, observable indicators rather than vague qualities
+3. Complete — cover edge cases the current description might miss
+4. Clearly worded — easy for an LLM evaluator to apply consistently
+
+Keep the same name and label. Only improve the description.
+
+Respond in this exact JSON format:
+{{
+  "name": "{criterion['name']}",
+  "label": "{criterion.get('label', criterion['name'])}",
+  "description": "Your improved description..."
+}}
+
+Return ONLY valid JSON — no markdown fences, no explanation."""
+
+    client = _get_anthropic_client(cfg)
+    response = client.messages.create(
+        model=cfg.get("evaluation", {}).get("model", "claude-sonnet-4-6"),
+        max_tokens=512,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    return _extract_json(response.content[0].text)
+
+
+def save_config(config_path: str, cfg: dict):
+    """Save the full config back to disk."""
+    with open(config_path, "w") as f:
+        yaml.dump(cfg, f, default_flow_style=False, sort_keys=False, width=100, allow_unicode=True)
+
+
 # ─── Config Loading ──────────────────────────────────────────────────────────
 
 
 def load_config(config_path: str) -> dict:
-    """Load and validate the YAML config file."""
+    """Load and validate the YAML config file.
+
+    If criteria are missing, auto-generates them and saves to config.
+    """
     path = Path(config_path)
     if not path.exists():
         print(f"ERROR: Config file not found: {config_path}", file=sys.stderr)
@@ -47,15 +195,27 @@ def load_config(config_path: str) -> dict:
         cfg = yaml.safe_load(f)
 
     # Validate required fields
-    required = ["generation", "evaluation", "topics"]
+    required = ["generation", "topics"]
     for key in required:
         if key not in cfg:
             print(f"ERROR: Config missing required key: {key}", file=sys.stderr)
             sys.exit(1)
 
+    # Ensure evaluation section exists
+    if "evaluation" not in cfg:
+        cfg["evaluation"] = {}
+    if "model" not in cfg["evaluation"]:
+        cfg["evaluation"]["model"] = "claude-sonnet-4-6"
+
+    # Auto-generate criteria if missing
     if not cfg["evaluation"].get("criteria"):
-        print("ERROR: Config must define at least one evaluation criterion", file=sys.stderr)
-        sys.exit(1)
+        criteria, mutation_rules = generate_criteria(cfg)
+        cfg["evaluation"]["criteria"] = criteria
+        if not cfg.get("mutation", {}).get("rules"):
+            if "mutation" not in cfg:
+                cfg["mutation"] = {}
+            cfg["mutation"]["rules"] = mutation_rules
+        save_config(config_path, cfg)
 
     return cfg
 
@@ -568,7 +728,51 @@ def main():
     parser.add_argument("--config", default="config.yaml", help="Path to YAML config file (default: config.yaml)")
     parser.add_argument("--once", action="store_true", help="Run a single cycle")
     parser.add_argument("--cycles", type=int, default=0, help="Run N cycles (0=infinite)")
+
+    # Subcommands for criteria management (used by skill orchestration)
+    sub = parser.add_subparsers(dest="command")
+
+    gen_cmd = sub.add_parser("generate-criteria", help="Generate evaluation criteria from config context (outputs JSON)")
+    gen_cmd.add_argument("--config", default="config.yaml", dest="gen_config")
+
+    opt_cmd = sub.add_parser("optimize-criterion", help="Generate an optimized version of a criterion (outputs JSON)")
+    opt_cmd.add_argument("--config", default="config.yaml", dest="opt_config")
+    opt_cmd.add_argument("--criterion-json", required=True, help="JSON string of the criterion to optimize")
+
+    save_cmd = sub.add_parser("save-criteria", help="Save criteria and mutation rules to config file")
+    save_cmd.add_argument("--config", default="config.yaml", dest="save_config_path")
+    save_cmd.add_argument("--criteria-json", required=True, help="JSON string of criteria array to save")
+    save_cmd.add_argument("--rules-json", default="", help="JSON string of mutation rules array to save")
+
     args = parser.parse_args()
+
+    # Handle subcommands
+    if args.command == "generate-criteria":
+        cfg = load_config(args.gen_config)
+        # Force regeneration regardless of existing criteria
+        criteria, mutation_rules = generate_criteria(cfg)
+        print(json.dumps({"criteria": criteria, "mutation_rules": mutation_rules}, indent=2))
+        return
+
+    if args.command == "optimize-criterion":
+        cfg = load_config(args.opt_config)
+        criterion = json.loads(args.criterion_json)
+        optimized = optimize_criterion(cfg, criterion)
+        print(json.dumps(optimized, indent=2))
+        return
+
+    if args.command == "save-criteria":
+        cfg = load_config(args.save_config_path)
+        criteria = json.loads(args.criteria_json)
+        cfg["evaluation"]["criteria"] = criteria
+        if args.rules_json:
+            rules = json.loads(args.rules_json)
+            if "mutation" not in cfg:
+                cfg["mutation"] = {}
+            cfg["mutation"]["rules"] = rules
+        save_config(args.save_config_path, cfg)
+        print(f"Saved {len(criteria)} criteria to {args.save_config_path}")
+        return
 
     cfg = load_config(args.config)
     paths = get_paths(args.config)

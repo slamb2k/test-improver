@@ -1,39 +1,123 @@
 ---
 name: autoresearch
 description: Generic self-improving prompt optimization using the Karpathy autoresearch pattern. Point it at any generative skill — diagrams, code, text — define eval criteria in YAML, and let it optimize. Includes a live web dashboard.
-allowed-tools: Read, Bash, Glob, Grep
+allowed-tools: Read, Bash, Glob, Grep, Edit, Write, AskUserQuestion
 ---
 
 # Autoresearch — Generic Self-Improving Prompt Optimization
 
-## What It Does
-Applies the Karpathy autoresearch pattern to **any generative skill**. Every cycle:
-1. Generates a batch of outputs with the current prompt (configurable backend)
-2. Evaluates each against your custom criteria via Claude (score out of batch × criteria)
-3. Keeps the prompt if it beats the best score, discards otherwise
-4. Mutates the best prompt to try to improve further
-5. Logs everything to JSONL for tracking
+## Skill Behavior
 
-## Quick Start
+When this skill is invoked, follow this procedure:
+
+### Step 1: Load and Validate Config
+
+Read the config file (default `config.yaml`) and check if `evaluation.criteria` is defined.
 
 ```bash
-# 1. Create a config.yaml defining your skill (see config.yaml for the diagram example)
-# 2. Create data/prompt.txt with your initial prompt
+python3 autoresearch.py --config config.yaml  # dry-run to validate
+```
 
-# Run continuous loop
-python3 autoresearch.py --config config.yaml
+### Step 2: Criteria Setup (Interactive)
 
+If the config has **no evaluation criteria** defined (empty or missing `evaluation.criteria`), run the interactive criteria setup:
+
+#### 2a. Ask whether to generate criteria
+
+Ask the user whether they want evaluation criteria auto-generated.
+
+If `AskUserQuestion` is available, use it:
+- Question: "No evaluation criteria found in config. Would you like me to generate them automatically?"
+- Options: "Yes, generate criteria (Recommended)" / "No, I'll define them manually"
+
+If `AskUserQuestion` is NOT available, ask via text output and wait for the user's response.
+
+If the user declines, tell them to add criteria to their config manually and stop.
+
+#### 2b. Generate criteria
+
+Run the generation subcommand:
+```bash
+python3 autoresearch.py generate-criteria --config config.yaml
+```
+
+This outputs JSON with `criteria` and `mutation_rules`. Parse the output.
+
+#### 2c. Offer to review criteria
+
+Ask the user whether they want to review the generated criteria one-by-one, or accept them all.
+
+If `AskUserQuestion` is available:
+- Question: "I generated N criteria. Would you like to review them?"
+- Options: "Review new criteria only (Recommended)" / "Accept all as-is"
+
+If the user wants to accept all, skip to Step 2e.
+
+If the config already has criteria, also offer: "Review all criteria (existing + new)"
+
+#### 2d. Review each criterion
+
+For each criterion, present it to the user and let them choose what to do.
+
+If `AskUserQuestion` is available, use it with a **preview** showing the criterion description:
+- Header: "Eval N/M"
+- Question: "How would you like to handle the '[label]' criterion?"
+- Options:
+  - "Keep as-is" — use the current description unchanged
+  - "Optimize" — generate an AI-improved version (calls `optimize-criterion` subcommand)
+  - "Write my own" — user provides their own description via the "Other" free-text option
+- Preview: show the criterion name, label, and full description
+
+If the user picks **"Optimize"**:
+1. Run: `python3 autoresearch.py optimize-criterion --config config.yaml --criterion-json '<json>'`
+2. Parse the optimized criterion from stdout
+3. Show the user both versions (original and optimized) and ask them to pick:
+   - If `AskUserQuestion` is available, show both as previews:
+     - "Use optimized version (Recommended)" with preview of new description
+     - "Keep original" with preview of original description
+     - "Write my own" — free-text via Other
+
+If the user picks **"Write my own"** (via the "Other" option), use their text as the new description, keeping the same `name` and `label`.
+
+If `AskUserQuestion` is NOT available:
+- Display each criterion as formatted text
+- Ask the user to reply with their choice (keep/optimize/custom) and wait for their response
+- For "optimize", display both versions and ask them to pick
+
+#### 2e. Save finalized criteria
+
+After all criteria are reviewed, save them to the config:
+```bash
+python3 autoresearch.py save-criteria --config config.yaml \
+  --criteria-json '<finalized_criteria_json>' \
+  --rules-json '<mutation_rules_json>'
+```
+
+### Step 3: Run the Optimization Loop
+
+Once criteria are set up, run the autoresearch loop:
+
+```bash
 # Single cycle (test)
 python3 autoresearch.py --config config.yaml --once
 
 # Run N cycles
 python3 autoresearch.py --config config.yaml --cycles 10
 
-# Start the live dashboard
+# Continuous loop
+python3 autoresearch.py --config config.yaml
+```
+
+Ask the user how they want to run it if not specified.
+
+### Step 4: Dashboard (optional)
+
+Offer to start the live dashboard:
+```bash
 python3 dashboard.py --config config.yaml --port 8501
 ```
 
-## Config File
+## Config File Format
 
 All domain-specific settings live in a YAML config:
 
@@ -50,15 +134,13 @@ generation:
   prompt_template: "{prompt}\n\nTopic: {topic}"
   backend_config: {}
 
+# evaluation.criteria can be omitted — the skill will offer to generate them
 evaluation:
   model: "claude-sonnet-4-6"
   criteria:
     - name: "criterion_one"
       label: "Display Name"
       description: "What to check for — be specific"
-    - name: "criterion_two"
-      label: "Another Check"
-      description: "Another thing to evaluate"
 
 mutation:
   model: "claude-sonnet-4-6"
@@ -72,6 +154,16 @@ topics:
 batch_size: 10
 cycle_seconds: 120
 ```
+
+## CLI Subcommands
+
+The script provides subcommands for criteria management:
+
+| Command | Description | Output |
+|---------|-------------|--------|
+| `generate-criteria --config X` | Auto-generate 4-6 criteria from config context | JSON `{criteria, mutation_rules}` |
+| `optimize-criterion --config X --criterion-json '{...}'` | Suggest improved version of one criterion | JSON criterion object |
+| `save-criteria --config X --criteria-json '[...]' --rules-json '[...]'` | Write criteria/rules to config file | Confirmation message |
 
 ## Generation Backends
 
@@ -97,9 +189,9 @@ Plus backend-specific: `google-genai` (Gemini), `openai` (OpenAI)
 ## File Structure
 
 ```
-autoresearch.py       # Main generate → eval → mutate loop
+autoresearch.py       # Main generate -> eval -> mutate loop + criteria subcommands
 dashboard.py          # Live web dashboard (Chart.js)
-config.yaml           # Your skill config (diagram example included)
+config.yaml           # Your skill config
 data/
   prompt.txt          # Current prompt being optimized
   best_prompt.txt     # Best prompt found so far
