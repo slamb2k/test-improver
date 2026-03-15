@@ -1,0 +1,180 @@
+{
+  "metadata": {
+    "skill_name": "autoresearch",
+    "skill_path": "/home/user/test-improver",
+    "executor_model": "claude-opus-4-6",
+    "analyzer_model": "claude-opus-4-6",
+    "timestamp": "2026-03-15T02:48:23Z",
+    "evals_run": [1, 2, 3],
+    "runs_per_configuration": 1
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "eval_name": "diagram-optimization",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 140.4,
+        "tokens": 38072,
+        "tool_calls": 11,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Reads SKILL.md and follows the step-by-step procedure", "passed": true, "evidence": "Transcript follows Steps 1-4 from SKILL.md"},
+        {"text": "Loads and validates config.yaml", "passed": true, "evidence": "Step 1 reads and reports all config fields"},
+        {"text": "Detects existing criteria and does NOT regenerate", "passed": true, "evidence": "Skips generation sub-step"},
+        {"text": "Asks user how many cycles to run", "passed": true, "evidence": "Presents 4 options including --once and --cycles"},
+        {"text": "Provides correct autoresearch.py command", "passed": true, "evidence": "Shows --config config.yaml flag"}
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "diagram-optimization",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.8,
+        "passed": 4,
+        "failed": 1,
+        "total": 5,
+        "time_seconds": 136.8,
+        "tokens": 31128,
+        "tool_calls": 13,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Reads SKILL.md and follows the step-by-step procedure", "passed": false, "evidence": "Did not read SKILL.md (by design)"},
+        {"text": "Loads and validates config.yaml", "passed": true, "evidence": "Reads config and all data files"},
+        {"text": "Detects existing criteria and does NOT regenerate", "passed": true, "evidence": "Does not suggest regenerating"},
+        {"text": "Asks user how many cycles to run", "passed": true, "evidence": "Presents continue vs reset options"},
+        {"text": "Provides correct autoresearch.py command", "passed": true, "evidence": "Shows --config config.yaml --cycles 5"}
+      ],
+      "notes": ["SKILL.md assertion expected to fail for baseline"]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "existing-config",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.75,
+        "passed": 3,
+        "failed": 1,
+        "total": 4,
+        "time_seconds": 91.6,
+        "tokens": 19195,
+        "tool_calls": 8,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Skips criteria generation/review", "passed": true, "evidence": "Correctly skipped per SKILL.md"},
+        {"text": "Uses --cycles 5 flag", "passed": true, "evidence": "Command: autoresearch.py --config config.yaml --cycles 5"},
+        {"text": "Offers dashboard after completion", "passed": true, "evidence": "Shows dashboard.py command"},
+        {"text": "Identifies correct config for code review", "passed": false, "evidence": "Noted mismatch but used diagram config"}
+      ],
+      "notes": ["Both with and without skill noticed config mismatch"]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "existing-config",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.75,
+        "passed": 3,
+        "failed": 1,
+        "total": 4,
+        "time_seconds": 81.4,
+        "tokens": 33749,
+        "tool_calls": 8,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Skips criteria generation/review", "passed": true, "evidence": "Goes straight to running cycles"},
+        {"text": "Uses --cycles 5 flag", "passed": true, "evidence": "Shows --cycles 5 command"},
+        {"text": "Offers dashboard after completion", "passed": true, "evidence": "Shows dashboard.py command"},
+        {"text": "Identifies correct config for code review", "passed": false, "evidence": "Noted mismatch but presented both as options"}
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "email-from-scratch",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 136.8,
+        "tokens": 20167,
+        "tool_calls": 9,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Creates config with openai_text backend", "passed": true, "evidence": "email_config.yaml with openai_text"},
+        {"text": "Defines criteria for click-worthiness, clarity, length", "passed": true, "evidence": "Documented 5 expected criteria covering all 3"},
+        {"text": "Includes realistic email topics", "passed": true, "evidence": "20 diverse campaign topics"},
+        {"text": "Creates initial prompt.txt", "passed": true, "evidence": "Created seed prompt for subject lines"},
+        {"text": "Sets up data directory structure", "passed": true, "evidence": "Documents mkdir -p data and prompt placement"}
+      ],
+      "notes": ["Used interactive criteria flow from SKILL.md rather than hardcoding"]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "email-from-scratch",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 126.5,
+        "tokens": 36417,
+        "tool_calls": 12,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Creates config with openai_text backend", "passed": true, "evidence": "email_config.yaml with openai_text"},
+        {"text": "Defines criteria for click-worthiness, clarity, length", "passed": true, "evidence": "3 criteria directly in config"},
+        {"text": "Includes realistic email topics", "passed": true, "evidence": "20 diverse topics"},
+        {"text": "Creates initial prompt.txt", "passed": true, "evidence": "Created initial_prompt.txt"},
+        {"text": "Sets up data directory structure", "passed": true, "evidence": "Documents full setup steps"}
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {"mean": 0.9167, "stddev": 0.1443, "min": 0.75, "max": 1.0},
+      "time_seconds": {"mean": 122.9, "stddev": 27.0, "min": 91.6, "max": 140.4},
+      "tokens": {"mean": 25811, "stddev": 10479, "min": 19195, "max": 38072}
+    },
+    "without_skill": {
+      "pass_rate": {"mean": 0.85, "stddev": 0.1323, "min": 0.75, "max": 1.0},
+      "time_seconds": {"mean": 114.9, "stddev": 29.6, "min": 81.4, "max": 136.8},
+      "tokens": {"mean": 33765, "stddev": 2645, "min": 31128, "max": 36417}
+    },
+    "delta": {
+      "pass_rate": "+0.07",
+      "time_seconds": "+8.0",
+      "tokens": "-7954"
+    }
+  },
+  "notes": [
+    "Eval 1 'Reads SKILL.md' assertion passes 100% with_skill but 0% without — expected by design, not discriminating",
+    "Eval 2 config identification fails equally in both configurations — the skill doesn't help resolve ambiguous config references",
+    "Eval 3 shows no pass_rate difference — both configurations achieve 5/5. The with_skill run used 37% fewer tokens (20167 vs 36417)",
+    "With-skill runs used 24% fewer tokens on average (25811 vs 33765) — the skill provides structure that reduces exploration",
+    "With-skill runs took slightly longer on average (+8s) but with high variance",
+    "The skill's main value-add is in procedural structure (following steps) and interactive features (criteria generation flow), not in task accuracy for these evals"
+  ]
+}

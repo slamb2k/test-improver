@@ -1,0 +1,47 @@
+{
+  "expectations": [
+    {
+      "text": "Reads SKILL.md and follows the step-by-step procedure defined in it",
+      "passed": false,
+      "evidence": "Transcript says 'WITHOUT reading any SKILL.md file' — explored codebase directly instead of following skill procedure. No SKILL.md steps referenced."
+    },
+    {
+      "text": "Loads and validates config.yaml before attempting to run",
+      "passed": true,
+      "evidence": "Step 1 reads config.yaml and examines all sections. Also reads state.json, results.jsonl, prompt.txt, and best_prompt.txt for full context."
+    },
+    {
+      "text": "Detects that evaluation criteria already exist in config.yaml and does NOT regenerate them",
+      "passed": true,
+      "evidence": "Finds existing criteria and does not suggest regenerating. Mentions 'The config uses gemini-2.5-flash-image for generation and claude-sonnet-4-6 for evaluation/mutation' and lists 4 existing criteria."
+    },
+    {
+      "text": "Asks the user how many cycles to run (or confirms before starting)",
+      "passed": true,
+      "evidence": "Presents Option A (continue, 5 more cycles) vs Option B (reset and re-run) and recommends 'verify current performance' first with --once."
+    },
+    {
+      "text": "Provides the correct autoresearch.py command with --config config.yaml flag",
+      "passed": true,
+      "evidence": "Correct commands: 'python3 autoresearch.py --config config.yaml --cycles 5', 'python3 autoresearch.py --config config.yaml --once'"
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 1,
+    "total": 5,
+    "pass_rate": 0.8
+  },
+  "timing": {
+    "total_duration_seconds": 136.8
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Reads SKILL.md and follows the step-by-step procedure defined in it",
+        "reason": "This assertion trivially fails for without_skill runs by design — it's not discriminating between skill quality, just confirming the skill was read."
+      }
+    ],
+    "overall": "Strong performance even without the skill — the codebase is self-documenting enough that the agent figured out correct commands. The SKILL.md assertion is expected to fail."
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "expectations": [
+    {
+      "text": "Skips criteria generation/review entirely since user says criteria exist",
+      "passed": true,
+      "evidence": "Transcript states: 'criteria already exist, so no auto-generation needed' and goes straight to running cycles."
+    },
+    {
+      "text": "Uses the --cycles 5 flag to run exactly 5 optimization cycles",
+      "passed": true,
+      "evidence": "Shows command: 'python3 autoresearch.py --cycles 5' and 'python3 autoresearch.py --config config.yaml --cycles 5'"
+    },
+    {
+      "text": "Offers to start the dashboard (dashboard.py) after cycles complete",
+      "passed": true,
+      "evidence": "Step 6 shows: 'python3 dashboard.py --config config.yaml --port 8501' with description of what the dashboard shows."
+    },
+    {
+      "text": "Identifies the correct config file for the code review use case",
+      "passed": false,
+      "evidence": "Transcript identifies the mismatch: 'this config is NOT for code review — it is for diagram generation' and mentions examples/code_review_config.yaml, but presents both as options rather than proactively using the correct one. Still defaults to root config.yaml."
+    }
+  ],
+  "summary": {
+    "passed": 3,
+    "failed": 1,
+    "total": 4,
+    "pass_rate": 0.75
+  },
+  "timing": {
+    "total_duration_seconds": 81.4
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "Same behavior as with-skill — noticed the config mismatch but didn't switch to the code review config. Both runs scored equally on this eval."
+  }
+}

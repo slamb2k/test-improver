@@ -1,0 +1,82 @@
+# ─── Autoresearch Skill Config ────────────────────────────────────────────────
+# Email Subject Line Generator — Optimize prompts for click-worthy subject lines.
+
+name: "email-subject-line-generator"
+description: "Optimize prompts for generating high-performing email subject lines that are click-worthy, clear, and appropriately sized"
+
+# ─── Generation ──────────────────────────────────────────────────────────────
+generation:
+  # Backend: using OpenAI as specified by the user
+  backend: "openai_text"
+
+  # Model to use for generation
+  model: "gpt-4o"
+
+  # API key env var name
+  api_key_env: "OPENAI_API_KEY"
+
+  # Output type: text (subject lines are plain text)
+  output_type: "text"
+
+  # File extension for saved outputs
+  output_extension: ".txt"
+
+  # How to combine the skill prompt with each topic.
+  # Available placeholders: {prompt}, {topic}
+  prompt_template: "{prompt}\n\nEmail campaign context: {topic}"
+
+  # Backend-specific config
+  backend_config: {}
+
+# ─── Evaluation ──────────────────────────────────────────────────────────────
+evaluation:
+  model: "claude-sonnet-4-6"
+
+  # Criteria will be auto-generated and refined via the interactive setup (Step 2).
+  # Leaving this empty so the skill triggers criteria generation.
+  criteria: []
+
+# ─── Mutation ────────────────────────────────────────────────────────────────
+mutation:
+  model: "claude-sonnet-4-6"
+
+  # Domain-specific rules for how to improve the prompt when criteria fail.
+  rules:
+    - "Keep subject lines under 60 characters — penalize any prompt that produces longer ones"
+    - "For low click-worthiness scores: add urgency, curiosity gaps, or personalization cues"
+    - "For low clarity scores: simplify language, remove jargon, ensure the value proposition is immediately obvious"
+    - "For length violations: explicitly state character limits and add 'concise' / 'brief' constraints"
+    - "Avoid clickbait or misleading framing — subject lines must honestly reflect email content"
+    - "Test different tones: professional, conversational, urgent, curiosity-driven"
+    - "Avoid ALL CAPS unless specifically needed for a single emphasis word"
+    - "Return ONLY the new prompt text — no explanation, no markdown fences"
+
+# ─── Topics / Inputs ────────────────────────────────────────────────────────
+# Each topic represents a different email campaign scenario to generate subject lines for.
+topics:
+  - "Weekly product newsletter for a SaaS project management tool announcing a new Gantt chart feature"
+  - "Abandoned cart reminder for an online clothing store with a 15% discount offer"
+  - "B2B cold outreach to marketing directors about an AI-powered analytics platform"
+  - "Post-purchase thank you email for a gourmet coffee subscription box"
+  - "Webinar invitation for a free session on personal finance basics"
+  - "Re-engagement email for users who haven't logged into a fitness app in 30 days"
+  - "Product launch announcement for a new wireless noise-canceling earbuds line"
+  - "Seasonal sale (Black Friday) for an electronics retailer"
+  - "Monthly digest for a tech industry news aggregator"
+  - "Customer feedback request after a hotel stay"
+  - "Early access invitation for a beta version of a design tool"
+  - "Subscription renewal reminder for an annual cloud storage plan"
+  - "Event follow-up email after attending a marketing conference"
+  - "Flash sale notification (24 hours only) for an online bookstore"
+  - "Welcome email for new subscribers to a personal development newsletter"
+  - "Case study share: how a client increased revenue 40% using your CRM platform"
+  - "Referral program announcement offering $25 credit per referral"
+  - "End-of-year review / highlights email for a project management SaaS"
+  - "Upsell email suggesting a premium plan to free-tier users of a video editing tool"
+  - "Apology / service recovery email after a 2-hour platform outage"
+
+# ─── Loop Settings ───────────────────────────────────────────────────────────
+batch_size: 10
+cycle_seconds: 120
+max_gen_workers: 3
+max_eval_workers: 5

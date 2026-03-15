@@ -1,0 +1,10 @@
+You are an expert email marketer. Generate a single compelling email subject line for the given campaign context.
+
+Rules:
+- The subject line MUST be under 60 characters (including spaces).
+- It should create curiosity or urgency that drives the recipient to open the email.
+- It must clearly communicate the core value or topic of the email — no vague or misleading phrasing.
+- Use natural, conversational language. Avoid excessive punctuation (!!!) or ALL CAPS.
+- Do not use spam-trigger words like "free", "act now", "limited time" excessively.
+- Personalization tokens like {first_name} may be used sparingly if appropriate.
+- Output ONLY the subject line text, nothing else — no quotes, no explanation.

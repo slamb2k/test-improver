@@ -1,0 +1,42 @@
+{
+  "expectations": [
+    {
+      "text": "Reads SKILL.md and follows the step-by-step procedure defined in it",
+      "passed": true,
+      "evidence": "Transcript explicitly follows Steps 1-4 from SKILL.md: 'Step 1: Load and Validate Config', 'Step 2: Criteria Setup (Interactive)', 'Step 4: Commands I Would Run'. References SKILL.md procedure throughout."
+    },
+    {
+      "text": "Loads and validates config.yaml before attempting to run",
+      "passed": true,
+      "evidence": "Step 1 reads config.yaml and reports all fields: name, backend, model, api_key_env, output_type, topics, batch_size. Command shown: 'python3 autoresearch.py --config config.yaml'"
+    },
+    {
+      "text": "Detects that evaluation criteria already exist in config.yaml and does NOT regenerate them",
+      "passed": true,
+      "evidence": "Step 2 states: 'Criteria ARE already defined. The config contains 4 evaluation criteria' and 'Since criteria already exist, skip the generation sub-step (2a-2b)'"
+    },
+    {
+      "text": "Asks the user how many cycles to run (or confirms before starting)",
+      "passed": true,
+      "evidence": "Step 3 presents 4 options to the user: 'Run more cycles to verify', 'Add new/stricter criteria', 'Reset and start fresh', or 'Run a validation batch with --once'. Also notes existing 40/40 score context."
+    },
+    {
+      "text": "Provides the correct autoresearch.py command with --config config.yaml flag",
+      "passed": true,
+      "evidence": "Multiple correct commands shown: 'python3 autoresearch.py --config config.yaml --once', 'python3 autoresearch.py --config config.yaml --cycles 10'"
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  },
+  "timing": {
+    "total_duration_seconds": 140.4
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "All assertions passed. The with-skill run followed the SKILL.md procedure closely and provided thorough, well-structured guidance."
+  }
+}
