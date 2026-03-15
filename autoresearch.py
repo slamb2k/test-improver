@@ -34,17 +34,33 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-# ─── Criteria Auto-Generation ────────────────────────────────────────────────
+# ─── Criteria Auto-Generation & Interactive Review ──────────────────────────
 
 
-def generate_criteria(cfg: dict) -> tuple[list[dict], list[str]]:
-    """Use Claude to auto-generate evaluation criteria and mutation rules from config context.
-
-    Returns (criteria_list, mutation_rules) derived from the skill's name,
-    description, generation settings, and sample topics.
-    """
+def _get_anthropic_client(cfg: dict):
+    """Get an Anthropic client for criteria generation/optimization."""
     import anthropic
 
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("ERROR: ANTHROPIC_API_KEY required for criteria generation", file=sys.stderr)
+        sys.exit(1)
+    return anthropic.Anthropic(api_key=api_key)
+
+
+def _extract_json(text: str) -> dict:
+    """Extract JSON from a response that may contain markdown fences."""
+    text = text.strip()
+    if "```" in text:
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    return json.loads(text)
+
+
+def _build_skill_context(cfg: dict) -> str:
+    """Build a context string describing the skill for LLM prompts."""
     name = cfg.get("name", "unnamed skill")
     description = cfg.get("description", "")
     output_type = cfg.get("generation", {}).get("output_type", "text")
@@ -53,17 +69,28 @@ def generate_criteria(cfg: dict) -> tuple[list[dict], list[str]]:
     sample_topics = topics[:5] if len(topics) > 5 else topics
     topics_text = "\n".join(f"- {t.strip()[:150]}" for t in sample_topics)
 
+    return f"""- Name: {name}
+- Description: {description}
+- Output type: {output_type} ({"visual content" if output_type == "image" else "text content"})
+- Backend: {backend}
+- Sample inputs/topics:
+{topics_text}"""
+
+
+def generate_criteria(cfg: dict) -> tuple[list[dict], list[str]]:
+    """Use Claude to auto-generate evaluation criteria and mutation rules from config context.
+
+    Returns (criteria_list, mutation_rules) derived from the skill's name,
+    description, generation settings, and sample topics.
+    """
+    skill_context = _build_skill_context(cfg)
+
     prompt = f"""You are designing evaluation criteria for an automated prompt optimization system.
 
 The system generates outputs and then evaluates them against yes/no boolean criteria. Your job is to define 4-6 criteria that capture what makes a high-quality output for this specific skill.
 
 SKILL DETAILS:
-- Name: {name}
-- Description: {description}
-- Output type: {output_type} ({"visual content" if output_type == "image" else "text content"})
-- Backend: {backend}
-- Sample inputs/topics:
-{topics_text}
+{skill_context}
 
 REQUIREMENTS FOR CRITERIA:
 1. Each criterion must be evaluatable as a simple yes/no (pass/fail) question
@@ -91,29 +118,16 @@ Respond in this exact JSON format:
 
 Return ONLY valid JSON — no markdown fences, no explanation."""
 
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        print("ERROR: ANTHROPIC_API_KEY required for criteria generation", file=sys.stderr)
-        sys.exit(1)
-
-    client = anthropic.Anthropic(api_key=api_key)
-    print("  Generating evaluation criteria from config context...")
+    client = _get_anthropic_client(cfg)
+    print("\n  Generating evaluation criteria from config context...")
 
     response = client.messages.create(
         model=cfg.get("evaluation", {}).get("model", "claude-sonnet-4-6"),
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
     )
-    text = response.content[0].text.strip()
 
-    # Extract JSON (handle markdown fences)
-    if "```" in text:
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-        text = text.strip()
-
-    result = json.loads(text)
+    result = _extract_json(response.content[0].text)
     criteria = result["criteria"]
     mutation_rules = result.get("mutation_rules", [])
 
@@ -121,11 +135,235 @@ Return ONLY valid JSON — no markdown fences, no explanation."""
     return criteria, mutation_rules
 
 
+def optimize_criterion(cfg: dict, criterion: dict) -> dict:
+    """Use Claude to suggest an improved version of a single criterion."""
+    skill_context = _build_skill_context(cfg)
+
+    prompt = f"""You are improving an evaluation criterion for an automated prompt optimization system.
+
+SKILL DETAILS:
+{skill_context}
+
+CURRENT CRITERION:
+- Name: {criterion['name']}
+- Label: {criterion.get('label', criterion['name'])}
+- Description: {criterion['description']}
+
+Improve this criterion to be more:
+1. Specific and objective — reduce ambiguity so different evaluators would agree
+2. Measurable — use concrete, observable indicators rather than vague qualities
+3. Complete — cover edge cases the current description might miss
+4. Clearly worded — easy for an LLM evaluator to apply consistently
+
+Keep the same name and label. Only improve the description.
+
+Respond in this exact JSON format:
+{{
+  "name": "{criterion['name']}",
+  "label": "{criterion.get('label', criterion['name'])}",
+  "description": "Your improved description..."
+}}
+
+Return ONLY valid JSON — no markdown fences, no explanation."""
+
+    client = _get_anthropic_client(cfg)
+    response = client.messages.create(
+        model=cfg.get("evaluation", {}).get("model", "claude-sonnet-4-6"),
+        max_tokens=512,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    return _extract_json(response.content[0].text)
+
+
+def _prompt_yes_no(question: str, default: bool = True) -> bool:
+    """Prompt user for a yes/no answer."""
+    suffix = " [Y/n] " if default else " [y/N] "
+    while True:
+        answer = input(question + suffix).strip().lower()
+        if answer == "":
+            return default
+        if answer in ("y", "yes"):
+            return True
+        if answer in ("n", "no"):
+            return False
+        print("  Please enter y or n.")
+
+
+def _display_criterion(criterion: dict, index: int):
+    """Display a single criterion with formatting."""
+    label = criterion.get("label", criterion["name"])
+    print(f"\n  ── Criterion {index}: {label} ──")
+    print(f"  Name:        {criterion['name']}")
+    print(f"  Description: {criterion['description'].strip()}")
+
+
+def review_criteria_interactive(cfg: dict, criteria: list[dict], review_mode: str) -> list[dict]:
+    """Walk through criteria one at a time, letting user keep/optimize/customize each.
+
+    review_mode: "new" (only newly generated), "all" (all criteria including existing)
+    Returns the final list of criteria.
+    """
+    existing_criteria = cfg["evaluation"].get("criteria", [])
+    existing_names = {c["name"] for c in existing_criteria}
+
+    if review_mode == "new":
+        to_review = [c for c in criteria if c["name"] not in existing_names]
+        keep_unchanged = [c for c in criteria if c["name"] in existing_names]
+    else:
+        to_review = list(criteria)
+        keep_unchanged = []
+
+    if not to_review:
+        print("\n  No criteria to review.")
+        return criteria
+
+    print(f"\n{'='*60}")
+    print(f"  CRITERIA REVIEW — {len(to_review)} criteria to review")
+    print(f"{'='*60}")
+    print("  For each criterion, choose:")
+    print("    [k] Keep as-is")
+    print("    [o] Optimize — use AI-suggested improvement")
+    print("    [c] Custom — write your own description")
+
+    reviewed = list(keep_unchanged)
+
+    for i, criterion in enumerate(to_review, 1):
+        _display_criterion(criterion, i)
+
+        while True:
+            choice = input("\n  [k]eep / [o]ptimize / [c]ustom? ").strip().lower()
+
+            if choice in ("k", "keep", ""):
+                reviewed.append(criterion)
+                print("  → Kept as-is.")
+                break
+
+            elif choice in ("o", "optimize"):
+                print("  → Generating optimized version...")
+                try:
+                    optimized = optimize_criterion(cfg, criterion)
+                    print(f"\n  Suggested improvement:")
+                    print(f"  Description: {optimized['description'].strip()}")
+
+                    accept = _prompt_yes_no("\n  Accept this optimization?", default=True)
+                    if accept:
+                        reviewed.append(optimized)
+                        print("  → Accepted optimized version.")
+                    else:
+                        # Fall back to keep or custom
+                        fallback = input("  [k]eep original / [c]ustom? ").strip().lower()
+                        if fallback in ("c", "custom"):
+                            print(f"  Current description: {criterion['description'].strip()}")
+                            custom_desc = input("  Enter new description: ").strip()
+                            if custom_desc:
+                                custom = dict(criterion)
+                                custom["description"] = custom_desc
+                                reviewed.append(custom)
+                                print("  → Using your custom description.")
+                            else:
+                                reviewed.append(criterion)
+                                print("  → Empty input, kept original.")
+                        else:
+                            reviewed.append(criterion)
+                            print("  → Kept original.")
+                    break
+                except Exception as e:
+                    print(f"  ERROR generating optimization: {e}")
+                    print("  Keeping original.")
+                    reviewed.append(criterion)
+                    break
+
+            elif choice in ("c", "custom"):
+                print(f"  Current description: {criterion['description'].strip()}")
+                custom_desc = input("  Enter new description: ").strip()
+                if custom_desc:
+                    custom = dict(criterion)
+                    custom["description"] = custom_desc
+                    reviewed.append(custom)
+                    print("  → Using your custom description.")
+                else:
+                    reviewed.append(criterion)
+                    print("  → Empty input, kept original.")
+                break
+
+            else:
+                print("  Please enter k, o, or c.")
+
+    print(f"\n  Review complete. {len(reviewed)} criteria finalized.")
+    return reviewed
+
+
+def setup_criteria_interactive(cfg: dict, config_path: Path) -> dict:
+    """Interactive flow for setting up evaluation criteria.
+
+    1. If no criteria exist, ask user if they want auto-generation
+    2. If yes, generate criteria
+    3. Offer to review criteria (new only or all)
+    4. Save finalized criteria to config
+
+    Returns updated cfg.
+    """
+    has_criteria = bool(cfg["evaluation"].get("criteria"))
+
+    if not has_criteria:
+        print("\n  No evaluation criteria defined in config.")
+        generate = _prompt_yes_no("  Would you like me to generate evaluation criteria?", default=True)
+
+        if not generate:
+            print("ERROR: Cannot run without evaluation criteria. Add them to your config or let me generate them.", file=sys.stderr)
+            sys.exit(1)
+
+        criteria, mutation_rules = generate_criteria(cfg)
+        cfg["evaluation"]["criteria"] = criteria
+
+        # Also set mutation rules if not already defined
+        if not cfg.get("mutation", {}).get("rules"):
+            if "mutation" not in cfg:
+                cfg["mutation"] = {}
+            cfg["mutation"]["rules"] = mutation_rules
+
+        # Ask about reviewing generated criteria
+        review = _prompt_yes_no("\n  Would you like to review the generated criteria?", default=True)
+        if review:
+            # All criteria are new, so "new" and "all" are the same
+            finalized = review_criteria_interactive(cfg, criteria, review_mode="all")
+            cfg["evaluation"]["criteria"] = finalized
+    else:
+        # Criteria already exist — offer to review them
+        existing = cfg["evaluation"]["criteria"]
+        print(f"\n  Found {len(existing)} existing evaluation criteria:")
+        for c in existing:
+            label = c.get("label", c["name"])
+            print(f"    - {label}: {c['description'].strip()[:80]}...")
+
+        review = _prompt_yes_no("\n  Would you like to review/refine the existing criteria?", default=False)
+        if review:
+            finalized = review_criteria_interactive(cfg, existing, review_mode="all")
+            cfg["evaluation"]["criteria"] = finalized
+
+    # Save criteria to config file for reproducibility
+    _save_config(config_path, cfg)
+    return cfg
+
+
+def _save_config(config_path: Path, cfg: dict):
+    """Save the full config back to disk."""
+    with open(config_path, "w") as f:
+        yaml.dump(cfg, f, default_flow_style=False, sort_keys=False, width=100, allow_unicode=True)
+    print(f"  Config saved to {config_path}")
+
+
 # ─── Config Loading ──────────────────────────────────────────────────────────
 
 
-def load_config(config_path: str) -> dict:
-    """Load and validate the YAML config file."""
+def load_config(config_path: str, interactive: bool = True) -> dict:
+    """Load and validate the YAML config file.
+
+    If interactive=True and criteria are missing, prompts the user to generate
+    and review them. If interactive=False, generates criteria automatically
+    without user input (for scripted/CI usage).
+    """
     path = Path(config_path)
     if not path.exists():
         print(f"ERROR: Config file not found: {config_path}", file=sys.stderr)
@@ -146,29 +384,21 @@ def load_config(config_path: str) -> dict:
     if "model" not in cfg["evaluation"]:
         cfg["evaluation"]["model"] = "claude-sonnet-4-6"
 
-    # Auto-generate criteria if not provided
-    if not cfg["evaluation"].get("criteria"):
-        criteria, mutation_rules = generate_criteria(cfg)
-        cfg["evaluation"]["criteria"] = criteria
-        # Also set mutation rules if not already defined
-        if not cfg.get("mutation", {}).get("rules"):
-            if "mutation" not in cfg:
-                cfg["mutation"] = {}
-            cfg["mutation"]["rules"] = mutation_rules
-
-        # Save generated criteria back to config for reproducibility
-        with open(path) as f:
-            raw = f.read()
-        _save_generated_criteria(path, cfg, criteria, mutation_rules)
+    if interactive:
+        # Interactive criteria setup — asks user, generates, reviews
+        cfg = setup_criteria_interactive(cfg, path)
+    else:
+        # Non-interactive: auto-generate if missing, no review
+        if not cfg["evaluation"].get("criteria"):
+            criteria, mutation_rules = generate_criteria(cfg)
+            cfg["evaluation"]["criteria"] = criteria
+            if not cfg.get("mutation", {}).get("rules"):
+                if "mutation" not in cfg:
+                    cfg["mutation"] = {}
+                cfg["mutation"]["rules"] = mutation_rules
+            _save_config(path, cfg)
 
     return cfg
-
-
-def _save_generated_criteria(config_path: Path, cfg: dict, criteria: list[dict], mutation_rules: list[str]):
-    """Append auto-generated criteria to the config file so they persist across runs."""
-    # Write the full config back with generated criteria included
-    with open(config_path, "w") as f:
-        yaml.dump(cfg, f, default_flow_style=False, sort_keys=False, width=100, allow_unicode=True)
 
 
 # ─── Data Paths ──────────────────────────────────────────────────────────────
@@ -679,9 +909,11 @@ def main():
     parser.add_argument("--config", default="config.yaml", help="Path to YAML config file (default: config.yaml)")
     parser.add_argument("--once", action="store_true", help="Run a single cycle")
     parser.add_argument("--cycles", type=int, default=0, help="Run N cycles (0=infinite)")
+    parser.add_argument("--no-interactive", action="store_true", help="Skip interactive criteria setup (auto-generate without prompts)")
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
+    interactive = not args.no_interactive
+    cfg = load_config(args.config, interactive=interactive)
     paths = get_paths(args.config)
 
     # Ensure ANTHROPIC_API_KEY is set (needed for eval/mutation)
