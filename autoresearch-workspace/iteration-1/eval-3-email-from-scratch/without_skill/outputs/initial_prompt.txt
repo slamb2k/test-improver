@@ -1,0 +1,10 @@
+Generate a single email subject line for the given campaign context.
+
+Requirements:
+- The subject line must be between 30 and 60 characters long
+- It should be compelling and create curiosity or communicate clear value
+- Use simple, direct language — no jargon or filler words
+- Do NOT use ALL CAPS, excessive punctuation, or spammy clickbait tactics
+- The reader should immediately understand what the email is about
+
+Output ONLY the subject line text — no quotes, no explanation, no alternatives.

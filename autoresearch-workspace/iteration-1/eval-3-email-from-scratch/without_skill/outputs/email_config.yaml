@@ -1,0 +1,89 @@
+# ─── Email Subject Line Optimization ──────────────────────────────────────────
+# Optimize prompts for generating high-performing email subject lines.
+# Uses OpenAI for generation, Claude for evaluation and mutation.
+
+name: "email-subject-lines"
+description: "Optimize prompts for generating click-worthy, clear, and well-sized email subject lines"
+
+# ─── Generation ──────────────────────────────────────────────────────────────
+generation:
+  backend: "openai_text"
+  model: "gpt-4o"
+  api_key_env: "OPENAI_API_KEY"
+  output_type: "text"
+  output_extension: ".txt"
+  prompt_template: "{prompt}\n\nEmail campaign context: {topic}"
+  backend_config:
+    max_tokens: 256
+
+# ─── Evaluation ──────────────────────────────────────────────────────────────
+evaluation:
+  model: "claude-sonnet-4-6"
+  criteria:
+    - name: "click_worthiness"
+      label: "Click-Worthy"
+      description: >
+        The subject line creates genuine curiosity or urgency that would compel
+        a reader to open the email. It uses at least one proven technique such as
+        a question, a number/statistic, a benefit statement, personalization,
+        or a mild curiosity gap. It must NOT resort to spammy clickbait tactics
+        like ALL CAPS, excessive punctuation (!!!), or misleading claims.
+
+    - name: "clarity"
+      label: "Clarity"
+      description: >
+        The subject line clearly communicates the core topic or value proposition
+        of the email in a single read. A reader should immediately understand
+        what the email is about without needing to open it. No vague, generic,
+        or confusing phrasing. The language is simple and direct — no jargon
+        unless the audience context specifically calls for it.
+
+    - name: "appropriate_length"
+      label: "Length"
+      description: >
+        The subject line is between 30 and 60 characters (inclusive). This is
+        the optimal range for display across desktop and mobile email clients.
+        Subject lines shorter than 30 characters are too terse and lack detail.
+        Subject lines longer than 60 characters risk being truncated on mobile.
+
+# ─── Mutation ────────────────────────────────────────────────────────────────
+mutation:
+  model: "claude-sonnet-4-6"
+  rules:
+    - "If click_worthiness fails: add instruction to use curiosity gaps, questions, or benefit-driven hooks"
+    - "If clarity fails: add instruction to state the email's core value in the first 5 words"
+    - "If length fails: add explicit character count constraint '30-60 characters' and instruct the model to count characters before responding"
+    - "Avoid spammy tactics — no ALL CAPS, no excessive punctuation, no misleading claims"
+    - "Each subject line should be a single line of text with no quotes around it"
+    - "Keep the prompt focused and under 400 words"
+    - "Return ONLY the new prompt text — no explanation, no markdown fences"
+
+# ─── Topics / Inputs ────────────────────────────────────────────────────────
+# Each topic represents an email campaign scenario to generate subject lines for.
+topics:
+  - "SaaS product launch: new AI-powered analytics dashboard for marketing teams"
+  - "E-commerce flash sale: 48-hour 40% off on all electronics"
+  - "Newsletter: weekly roundup of top productivity tips for remote workers"
+  - "Abandoned cart reminder: customer left 3 items in their shopping cart"
+  - "Webinar invitation: expert panel on the future of renewable energy"
+  - "Welcome email: new user just signed up for a project management tool"
+  - "Re-engagement: user hasn't logged in for 30 days, new features available"
+  - "B2B cold outreach: offering a free audit of their website SEO performance"
+  - "Event follow-up: thank you for attending our annual developer conference"
+  - "Feature announcement: mobile app now supports offline mode"
+  - "Case study: how Company X increased revenue 150% using our platform"
+  - "Seasonal promotion: back-to-school deals on online learning subscriptions"
+  - "Security alert: important account security update requires action"
+  - "Referral program: invite friends and earn $25 credit per signup"
+  - "Product update: major redesign of the user dashboard experience"
+  - "Survey request: help us improve — 2-minute feedback survey"
+  - "Limited offer: early bird pricing for annual conference tickets"
+  - "Content digest: top 5 articles on machine learning this month"
+  - "Partnership announcement: exciting new integration with Slack"
+  - "Milestone celebration: our community just hit 1 million users"
+
+# ─── Loop Settings ───────────────────────────────────────────────────────────
+batch_size: 10
+cycle_seconds: 90
+max_gen_workers: 3
+max_eval_workers: 5
