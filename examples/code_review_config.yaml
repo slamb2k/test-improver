@@ -1,0 +1,103 @@
+# ─── Example: Optimize a code review prompt ──────────────────────────────────
+# This shows how to use autoresearch with a text-generation skill.
+# Goal: optimize a prompt that generates high-quality code review comments.
+
+name: "code-review"
+description: "Optimize prompts for generating useful, actionable code review comments"
+
+generation:
+  backend: "anthropic_text"
+  model: "claude-sonnet-4-6"
+  api_key_env: "ANTHROPIC_API_KEY"
+  output_type: "text"
+  output_extension: ".md"
+  prompt_template: "{prompt}\n\nCode to review:\n```\n{topic}\n```"
+
+evaluation:
+  model: "claude-sonnet-4-6"
+  criteria:
+    - name: "actionable"
+      label: "Actionable"
+      description: >
+        Every comment includes a specific, concrete suggestion for how to fix
+        the issue. No vague statements like "consider improving this" without
+        saying exactly what to do.
+
+    - name: "correct"
+      label: "Correct"
+      description: >
+        All technical claims in the review are factually correct. No false
+        positives — every issue flagged is a real problem or a genuine
+        improvement opportunity.
+
+    - name: "prioritized"
+      label: "Prioritized"
+      description: >
+        Comments are ordered or labeled by severity (critical/major/minor/nit).
+        The most important issues come first. Trivial style nits are clearly
+        marked as low priority.
+
+    - name: "respectful_tone"
+      label: "Tone"
+      description: >
+        The review uses professional, constructive language. No condescending,
+        sarcastic, or harsh phrasing. Suggestions are framed positively
+        (e.g., "Consider X" rather than "This is wrong").
+
+mutation:
+  model: "claude-sonnet-4-6"
+  rules:
+    - "If reviews aren't actionable: add explicit instruction to include fix suggestions with code snippets"
+    - "If reviews have false positives: add instruction to verify claims before stating them"
+    - "If prioritization is missing: add explicit severity labeling instructions"
+    - "If tone is off: add examples of good vs bad phrasing"
+    - "Keep the prompt focused and under 500 words"
+    - "Return ONLY the new prompt text — no explanation, no markdown fences"
+
+topics:
+  - |
+    def get_user(id):
+        conn = sqlite3.connect('users.db')
+        result = conn.execute(f'SELECT * FROM users WHERE id = {id}')
+        return result.fetchone()
+  - |
+    async function fetchData(url) {
+      const res = await fetch(url);
+      const data = res.json();
+      return data;
+    }
+  - |
+    def calculate_discount(price, customer):
+        if customer.type == 'premium':
+            return price * 0.8
+        if customer.type == 'vip':
+            return price * 0.7
+        if customer.type == 'employee':
+            return price * 0.5
+        return price
+  - |
+    class UserService {
+      constructor() {
+        this.cache = {};
+      }
+      getUser(id) {
+        if (this.cache[id]) return this.cache[id];
+        const user = db.query('SELECT * FROM users WHERE id = ?', [id]);
+        this.cache[id] = user;
+        return user;
+      }
+    }
+  - |
+    import os
+    def read_config():
+        path = os.environ.get('CONFIG_PATH', '/etc/app/config.json')
+        with open(path) as f:
+            config = json.load(f)
+        DB_HOST = config['database']['host']
+        DB_PASS = config['database']['password']
+        return {'host': DB_HOST, 'password': DB_PASS}
+
+batch_size: 5
+cycle_seconds: 60
+max_gen_workers: 3
+max_eval_workers: 5

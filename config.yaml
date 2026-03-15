@@ -1,0 +1,123 @@
+# ─── Autoresearch Skill Config ────────────────────────────────────────────────
+# Point this at any generative skill to optimize its prompt.
+# Copy this file and customize for your use case.
+
+name: "diagram-generation"
+description: "Optimize prompts for generating clean technical diagrams"
+
+# ─── Generation ──────────────────────────────────────────────────────────────
+generation:
+  # Backend: "gemini_image" | "anthropic_text" | "openai_text" | "shell"
+  backend: "gemini_image"
+
+  # Model to use for generation
+  model: "gemini-2.5-flash-image"
+
+  # API key env var name
+  api_key_env: "NANO_BANANA_API_KEY"
+
+  # Output type: "image" | "text"
+  output_type: "image"
+
+  # File extension for saved outputs
+  output_extension: ".png"
+
+  # How to combine the skill prompt with each topic.
+  # Available placeholders: {prompt}, {topic}
+  prompt_template: "{prompt}\n\nDiagram to create: {topic}"
+
+  # Backend-specific config
+  backend_config:
+    response_modalities: ["IMAGE", "TEXT"]
+
+# ─── Evaluation ──────────────────────────────────────────────────────────────
+evaluation:
+  model: "claude-sonnet-4-6"
+
+  # For image outputs, uses Claude vision. For text, uses text-only eval.
+  # Each criterion has a name and description. The eval prompt is auto-built.
+  criteria:
+    - name: "legible_and_grammatical"
+      label: "Legible"
+      description: >
+        ALL text in the diagram is clearly readable — no garbled, overlapping,
+        blurry, or cut-off text. All words are real English words spelled correctly.
+        Sentences/phrases are grammatically correct.
+
+    - name: "pastel_colors"
+      label: "Pastel"
+      description: >
+        The diagram uses ONLY soft pastel colors for fills (light purple, light blue,
+        light green, light pink, light yellow, light teal, etc). No bright, saturated,
+        neon, or dark-colored fills. White background counts as passing.
+
+    - name: "linear_layout"
+      label: "Linear"
+      description: >
+        The diagram flows in ONE clear linear direction — either strictly left-to-right
+        OR strictly top-to-bottom. Not circular, radial, scattered, hub-and-spoke,
+        or multi-directional.
+
+    - name: "no_numbers"
+      label: "No Numbers"
+      description: >
+        The diagram contains ZERO numbers, step numbers, ordinals (1st, 2nd, 3rd),
+        sequence indicators (Step 1, Phase 2), or any numerical ordering.
+        Only text labels allowed.
+
+# ─── Mutation ────────────────────────────────────────────────────────────────
+mutation:
+  model: "claude-sonnet-4-6"
+
+  # Extra rules appended to the mutation prompt. Domain-specific guidance for
+  # how to improve the prompt when specific criteria fail.
+  rules:
+    - "Keep the core whiteboard/hand-drawn aesthetic"
+    - "For any criterion below 8/10, add VERY explicit constraints"
+    - "If numbers keep appearing: emphasize \"ABSOLUTELY NO numbers, step numbers, ordinals, sequence indicators, or numerical labels of any kind\""
+    - "If layout isn't linear: specify \"MUST flow in a single straight line from left to right\" or \"from top to bottom\""
+    - "If text is garbled: add \"All text must be real, correctly spelled English words\""
+    - "If colors aren't pastel: list exact colors to use and explicitly ban dark/saturated fills"
+    - "Be specific and imperative — image models respond to direct commands"
+    - "Keep prompt under 400 words"
+    - "Return ONLY the new prompt text — no explanation, no markdown fences"
+
+# ─── Topics / Inputs ────────────────────────────────────────────────────────
+# Each cycle samples batch_size topics from this list.
+topics:
+  - "CI/CD pipeline: code commit flows to build, then test, then deploy, then monitor"
+  - "Machine learning workflow: data collection to preprocessing to training to evaluation to deployment"
+  - "User authentication: login form to validation to JWT token to access granted"
+  - "Microservices: API gateway connecting to user service, payment service, and notification service"
+  - "ETL pipeline: extract from databases, transform with business rules, load into warehouse"
+  - "Email marketing funnel: capture lead to nurture sequence to segment to convert to retain"
+  - "Content creation pipeline: research to outline to draft to edit to publish"
+  - "Customer support flow: ticket submitted to triage to assign to resolve to follow up"
+  - "API request lifecycle: client request to load balancer to app server to database to response"
+  - "Git workflow: feature branch to pull request to code review to merge to deploy"
+  - "OAuth flow: user to app to authorization server to resource server"
+  - "Notification system: event trigger to queue to router splitting to email, push, and SMS channels"
+  - "Search engine pipeline: crawl pages to index to rank to serve results"
+  - "Video processing: upload to transcode to generate thumbnail to CDN to stream"
+  - "A/B testing: hypothesis to experiment design to traffic split to measure to analyze"
+  - "Payment processing: cart to checkout to payment gateway to bank to confirmation"
+  - "Recommendation engine: user activity to features to model to ranked results to display"
+  - "Monitoring stack: metrics collection to aggregation to alerting to dashboard"
+  - "Caching strategy: request to cache check then hit path or miss path to origin server"
+  - "Log aggregation: app logs to collector to parser to storage to visualization"
+  - "Message queue: producer to exchange to routing to queues to consumers"
+  - "Blue-green deploy: load balancer switching between blue and green environments"
+  - "SSO architecture: identity provider connecting to multiple service providers via tokens"
+  - "Data lake: raw ingestion to cataloging to processing to curated zone to analytics"
+  - "Serverless flow: API request to function trigger to compute to storage to response"
+  - "Container orchestration: registry to scheduler to node to pod to service mesh"
+  - "GraphQL architecture: client query to resolver to data sources to merged response"
+  - "Event sourcing: command to event store to projections to read models to query"
+  - "Feature flag system: config to evaluation engine to user targeting to rollout"
+  - "Rate limiting: request to counter check to allow or reject to update counter"
+
+# ─── Loop Settings ───────────────────────────────────────────────────────────
+batch_size: 10
+cycle_seconds: 120
+max_gen_workers: 3
+max_eval_workers: 5
