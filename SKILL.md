@@ -1,86 +1,125 @@
 ---
-name: autoresearch-diagrams
-description: Self-improving diagram prompt optimization using the Karpathy autoresearch pattern. Generates batches of diagrams, evaluates via Claude vision, mutates the prompt, keeps winners. Includes a live web dashboard.
+name: autoresearch
+description: Generic self-improving prompt optimization using the Karpathy autoresearch pattern. Point it at any generative skill — diagrams, code, text — define eval criteria in YAML, and let it optimize. Includes a live web dashboard.
 allowed-tools: Read, Bash, Glob, Grep
 ---
 
-# Autoresearch Diagrams — Self-Improving Prompt Optimization
+# Autoresearch — Generic Self-Improving Prompt Optimization
 
 ## What It Does
-Applies the Karpathy autoresearch pattern to diagram generation prompts. Every 2 minutes:
-1. Generates 10 diagrams with the current prompt (Gemini image gen)
-2. Evaluates each against 4 criteria via Claude Sonnet vision (score out of 40)
+Applies the Karpathy autoresearch pattern to **any generative skill**. Every cycle:
+1. Generates a batch of outputs with the current prompt (configurable backend)
+2. Evaluates each against your custom criteria via Claude (score out of batch × criteria)
 3. Keeps the prompt if it beats the best score, discards otherwise
 4. Mutates the best prompt to try to improve further
 5. Logs everything to JSONL for tracking
 
-## Eval Criteria (4 per image, 40 max per batch)
-1. **Legible & grammatical** — all text readable, correctly spelled
-2. **Pastel colors** — soft pastel fills only, no saturated/dark colors
-3. **Linear layout** — strictly left-to-right or top-to-bottom
-4. **No numbers** — zero digits, ordinals, or step numbers
-
 ## Quick Start
 
 ```bash
-# Run continuous loop (every 2 min)
-python3 .claude/skills/autoresearch-diagrams/autoresearch.py
+# 1. Create a config.yaml defining your skill (see config.yaml for the diagram example)
+# 2. Create data/prompt.txt with your initial prompt
+
+# Run continuous loop
+python3 autoresearch.py --config config.yaml
 
 # Single cycle (test)
-python3 .claude/skills/autoresearch-diagrams/autoresearch.py --once
+python3 autoresearch.py --config config.yaml --once
 
 # Run N cycles
-python3 .claude/skills/autoresearch-diagrams/autoresearch.py --cycles 10
+python3 autoresearch.py --config config.yaml --cycles 10
 
 # Start the live dashboard
-python3 .claude/skills/autoresearch-diagrams/dashboard.py --port 8501
-# Then open http://localhost:8501
+python3 dashboard.py --config config.yaml --port 8501
 ```
+
+## Config File
+
+All domain-specific settings live in a YAML config:
+
+```yaml
+name: "my-skill"
+description: "What this skill does"
+
+generation:
+  backend: "gemini_image"    # or: anthropic_text, openai_text, shell
+  model: "gemini-2.5-flash-image"
+  api_key_env: "MY_API_KEY"
+  output_type: "image"       # or: text
+  output_extension: ".png"
+  prompt_template: "{prompt}\n\nTopic: {topic}"
+  backend_config: {}
+
+evaluation:
+  model: "claude-sonnet-4-6"
+  criteria:
+    - name: "criterion_one"
+      label: "Display Name"
+      description: "What to check for — be specific"
+    - name: "criterion_two"
+      label: "Another Check"
+      description: "Another thing to evaluate"
+
+mutation:
+  model: "claude-sonnet-4-6"
+  rules:
+    - "Domain-specific guidance for prompt improvement"
+
+topics:
+  - "Input variation 1"
+  - "Input variation 2"
+
+batch_size: 10
+cycle_seconds: 120
+```
+
+## Generation Backends
+
+| Backend | Description | API Key Env |
+|---------|-------------|-------------|
+| `gemini_image` | Gemini native image generation | Custom (set `api_key_env`) |
+| `anthropic_text` | Claude text generation | `ANTHROPIC_API_KEY` |
+| `openai_text` | OpenAI text generation | `OPENAI_API_KEY` |
+| `shell` | Run a shell command (prompt via stdin) | None |
 
 ## Environment
 Requires in `.env`:
 ```
-NANO_BANANA_API_KEY=your_gemini_api_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key   # Always required (eval/mutation)
+# Plus whatever your generation backend needs:
+# NANO_BANANA_API_KEY=your_gemini_key
+# OPENAI_API_KEY=your_openai_key
 ```
 
-Dependencies: `google-genai`, `anthropic`, `python-dotenv`
+Dependencies: `pyyaml`, `anthropic`, `python-dotenv`
+Plus backend-specific: `google-genai` (Gemini), `openai` (OpenAI)
 
 ## File Structure
 
 ```
-.claude/skills/autoresearch-diagrams/
-  SKILL.md              # This file
-  autoresearch.py       # Main generate -> eval -> mutate loop
-  dashboard.py          # Live web dashboard (Chart.js)
-  data/
-    prompt.txt          # Current prompt being optimized
-    best_prompt.txt     # Best prompt found so far
-    state.json          # Loop state (run number, best score)
-    results.jsonl       # Append-only experiment log
-    diagrams/
-      run_001/          # 10 diagrams per run
-      run_002/
-      ...
+autoresearch.py       # Main generate → eval → mutate loop
+dashboard.py          # Live web dashboard (Chart.js)
+config.yaml           # Your skill config (diagram example included)
+data/
+  prompt.txt          # Current prompt being optimized
+  best_prompt.txt     # Best prompt found so far
+  state.json          # Loop state (run number, best score)
+  results.jsonl       # Append-only experiment log
+  outputs/
+    run_001/          # Batch outputs per run
+    run_002/
 ```
-
-## Models
-- **Generation**: `gemini-2.5-flash-image` (Gemini native image gen)
-- **Evaluation**: `claude-sonnet-4-6` (vision + structured JSON output)
-- **Mutation**: `claude-sonnet-4-6` (prompt rewriting based on failure analysis)
 
 ## Dashboard
 Serves at `http://localhost:8501` with:
 - 4 stat cards (current best, baseline, improvement %, runs/kept)
 - Score-over-time chart with keep/discard dot coloring
-- Per-criterion breakdown charts (legible, pastel, linear, no numbers)
+- Per-criterion breakdown charts (auto-generated from your criteria)
 - Run history table
 - Current best prompt display
 - Auto-refreshes every 15s
 
-## Cost
-- ~$0.03-0.05 per diagram generation (Gemini Flash)
-- ~$0.01 per eval (Sonnet vision, small image + short response)
-- ~$0.01 per mutation (Sonnet text)
-- **Total: ~$0.40-0.60 per cycle (10 diagrams)**
-- At 2-min intervals: ~$12-18/hour
+## Models
+- **Evaluation**: Claude (vision for images, text for text outputs)
+- **Mutation**: Claude (prompt rewriting based on failure analysis)
+- **Generation**: Configurable (Gemini, Claude, OpenAI, or shell command)

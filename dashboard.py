@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Autoresearch Dashboard — Live visualization of diagram prompt optimization.
+Autoresearch Dashboard — Live visualization of prompt optimization.
 
-Reads results.jsonl and serves a live-updating dashboard at http://localhost:8501.
+Reads results.jsonl and serves a live-updating dashboard. Automatically
+detects criteria from the data — works with any config.
 
 Usage:
-    python3 diagram_autoresearch_dashboard.py
-    python3 diagram_autoresearch_dashboard.py --port 8501
+    python3 dashboard.py
+    python3 dashboard.py --config my_skill.yaml --port 8501
 """
 
 import json
@@ -16,19 +17,96 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
 
+import yaml
+
+# ─── Defaults (overridden by --config) ───────────────────────────────────────
+
 BASE_DIR = Path(__file__).resolve().parent / "data"
 RESULTS_FILE = BASE_DIR / "results.jsonl"
 STATE_FILE = BASE_DIR / "state.json"
 PROMPT_FILE = BASE_DIR / "prompt.txt"
 BEST_PROMPT_FILE = BASE_DIR / "best_prompt.txt"
-DIAGRAMS_DIR = BASE_DIR / "diagrams"
 
-HTML = r"""<!DOCTYPE html>
+SKILL_NAME = "Autoresearch"
+CRITERIA_LABELS = {}  # name -> label, populated from config or data
+BATCH_SIZE = 10
+
+
+def load_config_labels(config_path: str | None):
+    """Load criteria labels and name from config if available."""
+    global SKILL_NAME, CRITERIA_LABELS, BATCH_SIZE, BASE_DIR, RESULTS_FILE, STATE_FILE, PROMPT_FILE, BEST_PROMPT_FILE
+
+    if config_path and Path(config_path).exists():
+        with open(config_path) as f:
+            cfg = yaml.safe_load(f)
+        SKILL_NAME = cfg.get("name", "Autoresearch")
+        BATCH_SIZE = cfg.get("batch_size", 10)
+        for c in cfg.get("evaluation", {}).get("criteria", []):
+            CRITERIA_LABELS[c["name"]] = c.get("label", c["name"])
+
+        # Derive paths from config location
+        base = Path(config_path).resolve().parent / "data"
+        BASE_DIR = base
+        RESULTS_FILE = base / "results.jsonl"
+        STATE_FILE = base / "state.json"
+        PROMPT_FILE = base / "prompt.txt"
+        BEST_PROMPT_FILE = base / "best_prompt.txt"
+
+
+def get_criteria_label(name: str) -> str:
+    """Get display label for a criterion, falling back to titlecase."""
+    if name in CRITERIA_LABELS:
+        return CRITERIA_LABELS[name]
+    return name.replace("_", " ").title()
+
+
+# ─── HTML Template ───────────────────────────────────────────────────────────
+
+def build_html(criteria_names: list[str]) -> str:
+    """Build the dashboard HTML dynamically based on discovered criteria."""
+    criteria_charts_html = ""
+    criteria_headers = ""
+    criteria_cells = ""
+    chart_inits = ""
+    chart_updates = ""
+    chart_vars = ""
+
+    colors = [
+        ("#8e44ad", "rgba(142,68,173,0.12)"),
+        ("#2980b9", "rgba(41,128,185,0.12)"),
+        ("#27ae60", "rgba(39,174,96,0.12)"),
+        ("#d35400", "rgba(211,84,0,0.12)"),
+        ("#c0392b", "rgba(192,57,43,0.12)"),
+        ("#16a085", "rgba(22,160,133,0.12)"),
+        ("#f39c12", "rgba(243,156,18,0.12)"),
+        ("#2c3e50", "rgba(44,62,80,0.12)"),
+    ]
+
+    for i, name in enumerate(criteria_names):
+        label = get_criteria_label(name)
+        color, color_light = colors[i % len(colors)]
+        canvas_id = f"chart_{name}"
+        var_name = f"chart_{name}"
+
+        criteria_charts_html += f"""
+  <div class="criteria-chart">
+    <h3>{label}</h3>
+    <canvas id="{canvas_id}"></canvas>
+  </div>"""
+
+        criteria_headers += f"<th>{label}</th>"
+        criteria_cells += f"<td>${{r.criteria?.{name} ?? '?'}}/{SKILL_NAME != 'Autoresearch' and BATCH_SIZE or 10}</td>"
+
+        chart_vars += f"let {var_name};\n"
+        chart_inits += f"  {var_name} = createChart('{canvas_id}', '{label}', batchSize, '{color}', '{color_light}');\n"
+        chart_updates += f"  updateCriterionChart({var_name}, labels, runs.map(r => r.criteria?.{name} ?? 0));\n"
+
+    return r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Diagram Autoresearch</title>
+<title>""" + SKILL_NAME + r""" — Autoresearch</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -79,10 +157,10 @@ HTML = r"""<!DOCTYPE html>
 <div class="header">
   <div>
     <div style="display:flex;align-items:center;gap:12px;">
-      <h1>Autoresearch</h1>
+      <h1>""" + SKILL_NAME + r"""</h1>
       <span class="badge" id="live-badge">LIVE</span>
     </div>
-    <div class="subtitle" id="subtitle">Diagram prompt optimization — refreshes every 15s</div>
+    <div class="subtitle" id="subtitle">Prompt optimization — refreshes every 15s</div>
   </div>
 </div>
 
@@ -109,30 +187,14 @@ HTML = r"""<!DOCTYPE html>
   <canvas id="mainChart"></canvas>
 </div>
 
-<div class="criteria-charts">
-  <div class="criteria-chart">
-    <h3>Legible & Grammatical</h3>
-    <canvas id="legChart"></canvas>
-  </div>
-  <div class="criteria-chart">
-    <h3>Pastel Colors</h3>
-    <canvas id="pastelChart"></canvas>
-  </div>
-  <div class="criteria-chart">
-    <h3>Linear Layout</h3>
-    <canvas id="linearChart"></canvas>
-  </div>
-  <div class="criteria-chart">
-    <h3>No Numbers</h3>
-    <canvas id="numbersChart"></canvas>
-  </div>
+<div class="criteria-charts">""" + criteria_charts_html + r"""
 </div>
 
 <div class="table-container">
   <h3>Run History</h3>
   <table>
     <thead>
-      <tr><th>Run</th><th>Status</th><th>Score</th><th>Legible</th><th>Pastel</th><th>Linear</th><th>No Nums</th><th>Time</th></tr>
+      <tr><th>Run</th><th>Status</th><th>Score</th>""" + criteria_headers + r"""<th>Time</th></tr>
     </thead>
     <tbody id="run-table"></tbody>
   </table>
@@ -147,7 +209,6 @@ HTML = r"""<!DOCTYPE html>
 const ORANGE = '#c0784a';
 const ORANGE_LIGHT = 'rgba(192, 120, 74, 0.15)';
 const GREEN = '#27ae60';
-const GREEN_LIGHT = 'rgba(39, 174, 96, 0.15)';
 
 const chartDefaults = {
   responsive: true,
@@ -159,7 +220,8 @@ const chartDefaults = {
   }
 };
 
-let mainChart, legChart, pastelChart, linearChart, numbersChart;
+let mainChart;
+""" + chart_vars + r"""
 
 function createChart(canvasId, label, maxY, color, colorLight) {
   const ctx = document.getElementById(canvasId).getContext('2d');
@@ -190,18 +252,9 @@ function createChart(canvasId, label, maxY, color, colorLight) {
   });
 }
 
-function initCharts() {
-  mainChart = createChart('mainChart', 'Score', 40, ORANGE, ORANGE_LIGHT);
-  legChart = createChart('legChart', 'Legible', 10, '#8e44ad', 'rgba(142,68,173,0.12)');
-  pastelChart = createChart('pastelChart', 'Pastel', 10, '#2980b9', 'rgba(41,128,185,0.12)');
-  linearChart = createChart('linearChart', 'Linear', 10, '#27ae60', 'rgba(39,174,96,0.12)');
-  numbersChart = createChart('numbersChart', 'No Numbers', 10, '#d35400', 'rgba(211,84,0,0.12)');
-}
-
-function updateChart(chart, labels, data, bestScore) {
+function updateChart(chart, labels, data) {
   chart.data.labels = labels;
   chart.data.datasets[0].data = data;
-  // Color dots: orange for new best at that point, gray for discard
   let runningBest = -1;
   const colors = data.map(v => {
     if (v > runningBest) { runningBest = v; return ORANGE; }
@@ -223,16 +276,12 @@ function updateCriterionChart(chart, labels, data) {
   chart.update('none');
 }
 
-async function fetchData() {
-  try {
-    const res = await fetch('/api/data');
-    const data = await res.json();
-    return data;
-  } catch (e) {
-    console.error('Fetch error:', e);
-    return null;
-  }
-}
+const batchSize = """ + str(BATCH_SIZE) + r""";
+
+function initCharts() {
+  const maxScore = batchSize * """ + str(len(criteria_names)) + r""";
+  mainChart = createChart('mainChart', 'Score', maxScore, ORANGE, 'rgba(192, 120, 74, 0.15)');
+""" + chart_inits + r"""}
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -240,66 +289,66 @@ function formatTime(iso) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+const criteriaNames = """ + json.dumps(criteria_names) + r""";
+const criteriaLabels = """ + json.dumps({n: get_criteria_label(n) for n in criteria_names}) + r""";
+
 async function refresh() {
-  const data = await fetchData();
-  if (!data || !data.runs || data.runs.length === 0) return;
+  try {
+    const res = await fetch('/api/data');
+    const data = await res.json();
+    if (!data || !data.runs || data.runs.length === 0) return;
 
-  const runs = data.runs;
-  const labels = runs.map(r => r.run);
-  const scores = runs.map(r => r.score);
-  const baseline = scores[0];
-  const best = Math.max(...scores);
+    const runs = data.runs;
+    const labels = runs.map(r => r.run);
+    const scores = runs.map(r => r.score);
+    const maxScore = runs[0]?.max || (batchSize * criteriaNames.length);
+    const baseline = scores[0];
+    const best = Math.max(...scores);
 
-  // Stats
-  document.getElementById('stat-best').textContent = best + '/40';
-  document.getElementById('stat-baseline').textContent = baseline + '/40';
-  const improvement = baseline > 0 ? ((best - baseline) / baseline * 100).toFixed(1) : '—';
-  const improvEl = document.getElementById('stat-improvement');
-  improvEl.textContent = improvement === '—' ? '—' : (improvement > 0 ? '+' : '') + improvement + '%';
-  improvEl.className = 'stat-value ' + (improvement > 0 ? 'green' : improvement < 0 ? 'orange' : 'neutral');
+    document.getElementById('stat-best').textContent = best + '/' + maxScore;
+    document.getElementById('stat-baseline').textContent = baseline + '/' + maxScore;
+    const improvement = baseline > 0 ? ((best - baseline) / baseline * 100).toFixed(1) : '—';
+    const improvEl = document.getElementById('stat-improvement');
+    improvEl.textContent = improvement === '—' ? '—' : (improvement > 0 ? '+' : '') + improvement + '%';
+    improvEl.className = 'stat-value ' + (improvement > 0 ? 'green' : improvement < 0 ? 'orange' : 'neutral');
 
-  // Count "kept" runs (new best at that point)
-  let kept = 0, runningBest = -1;
-  scores.forEach(s => { if (s > runningBest) { kept++; runningBest = s; } });
-  document.getElementById('stat-runs').textContent = runs.length + ' / ' + kept;
+    let kept = 0, runningBest = -1;
+    scores.forEach(s => { if (s > runningBest) { kept++; runningBest = s; } });
+    document.getElementById('stat-runs').textContent = runs.length + ' / ' + kept;
 
-  // Main chart
-  updateChart(mainChart, labels, scores, best);
+    updateChart(mainChart, labels, scores);
 
-  // Criteria charts
-  updateCriterionChart(legChart, labels, runs.map(r => r.criteria?.legible ?? 0));
-  updateCriterionChart(pastelChart, labels, runs.map(r => r.criteria?.pastel ?? 0));
-  updateCriterionChart(linearChart, labels, runs.map(r => r.criteria?.linear ?? 0));
-  updateCriterionChart(numbersChart, labels, runs.map(r => r.criteria?.no_numbers ?? 0));
+""" + chart_updates + r"""
+    // Table
+    const tbody = document.getElementById('run-table');
+    let runningBest2 = -1;
+    const statuses = scores.map(s => { if (s > runningBest2) { runningBest2 = s; return 'keep'; } return 'discard'; });
+    const rows = runs.map((r, idx) => {
+      const st = statuses[idx];
+      let critCells = '';
+      criteriaNames.forEach(n => {
+        critCells += '<td>' + (r.criteria?.[n] ?? '?') + '/' + batchSize + '</td>';
+      });
+      return '<tr>' +
+        '<td>' + r.run + '</td>' +
+        '<td class="status-' + st + '">' + st + '</td>' +
+        '<td><strong>' + r.score + '/' + maxScore + '</strong></td>' +
+        critCells +
+        '<td>' + formatTime(r.timestamp) + '</td>' +
+        '</tr>';
+    }).reverse();
+    tbody.innerHTML = rows.join('');
 
-  // Table (most recent first)
-  const tbody = document.getElementById('run-table');
-  let runningBest2 = -1;
-  const statuses = scores.map(s => { if (s > runningBest2) { runningBest2 = s; return 'keep'; } return 'discard'; });
-  const rows = runs.map((r, idx) => {
-    const st = statuses[idx];
-    return `<tr>
-      <td>${r.run}</td>
-      <td class="status-${st}">${st}</td>
-      <td><strong>${r.score}/40</strong></td>
-      <td>${r.criteria?.legible ?? '?'}/10</td>
-      <td>${r.criteria?.pastel ?? '?'}/10</td>
-      <td>${r.criteria?.linear ?? '?'}/10</td>
-      <td>${r.criteria?.no_numbers ?? '?'}/10</td>
-      <td>${formatTime(r.timestamp)}</td>
-    </tr>`;
-  }).reverse();
-  tbody.innerHTML = rows.join('');
+    if (data.best_prompt) {
+      document.getElementById('best-prompt').textContent = data.best_prompt;
+    }
 
-  // Best prompt
-  if (data.best_prompt) {
-    document.getElementById('best-prompt').textContent = data.best_prompt;
+    const lastRun = runs[runs.length - 1];
+    document.getElementById('subtitle').textContent =
+      'Prompt optimization — ' + runs.length + ' runs — last: ' + formatTime(lastRun?.timestamp);
+  } catch (e) {
+    console.error('Fetch error:', e);
   }
-
-  // Update subtitle
-  const lastRun = runs[runs.length - 1];
-  document.getElementById('subtitle').textContent =
-    `Diagram prompt optimization — ${runs.length} runs — last: ${formatTime(lastRun?.timestamp)}`;
 }
 
 initCharts();
@@ -310,15 +359,43 @@ setInterval(refresh, 15000);
 </html>"""
 
 
+# ─── Discover criteria from existing data ────────────────────────────────────
+
+def discover_criteria() -> list[str]:
+    """Read results.jsonl and extract criteria names from the first entry."""
+    if not RESULTS_FILE.exists():
+        return []
+    for line in RESULTS_FILE.read_text().strip().split("\n"):
+        if line.strip():
+            try:
+                entry = json.loads(line)
+                return list(entry.get("criteria", {}).keys())
+            except json.JSONDecodeError:
+                continue
+    return []
+
+
+# ─── HTTP Handler ────────────────────────────────────────────────────────────
+
+_cached_html = None
+
+
 class DashboardHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
+        global _cached_html
         parsed = urlparse(self.path)
 
         if parsed.path == "/" or parsed.path == "/index.html":
+            if _cached_html is None:
+                criteria = discover_criteria()
+                if not criteria:
+                    criteria = list(CRITERIA_LABELS.keys()) if CRITERIA_LABELS else ["score"]
+                _cached_html = build_html(criteria)
+
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(HTML.encode())
+            self.wfile.write(_cached_html.encode())
 
         elif parsed.path == "/api/data":
             self.send_response(200)
@@ -342,12 +419,20 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             data = {"runs": runs, "best_prompt": best_prompt}
             self.wfile.write(json.dumps(data).encode())
 
+        elif parsed.path == "/api/refresh-html":
+            # Force rebuild HTML (useful when new criteria appear)
+            _cached_html = None
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+
         else:
             self.send_response(404)
             self.end_headers()
 
     def log_message(self, format, *args):
-        pass  # Suppress request logs
+        pass
 
 
 def main():
@@ -355,11 +440,21 @@ def main():
 
     parser = argparse.ArgumentParser(description="Autoresearch Dashboard")
     parser.add_argument("--port", type=int, default=8501)
+    parser.add_argument("--config", default=None, help="Path to YAML config (for labels/name)")
     args = parser.parse_args()
 
+    if args.config:
+        load_config_labels(args.config)
+    else:
+        # Try to find config.yaml in same directory
+        default_config = Path(__file__).resolve().parent / "config.yaml"
+        if default_config.exists():
+            load_config_labels(str(default_config))
+
     server = HTTPServer(("0.0.0.0", args.port), DashboardHandler)
-    print(f"Dashboard running at http://localhost:{args.port}")
-    print(f"Reading from: {RESULTS_FILE}")
+    print(f"Dashboard: {SKILL_NAME}")
+    print(f"  URL: http://localhost:{args.port}")
+    print(f"  Data: {RESULTS_FILE}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

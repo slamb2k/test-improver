@@ -1,0 +1,10 @@
+# Generated outputs
+data/outputs/
+data/diagrams/
+
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
